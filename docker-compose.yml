@@ -1,0 +1,42 @@
+# FlagFlow — 100% local. Solo necesitás Docker.
+# Uso: docker-compose up -d
+# API: http://localhost:8080
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: ff-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: flaguser
+      POSTGRES_PASSWORD: flagpass
+      POSTGRES_DB: feature_flags
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U flaguser -d feature_flags"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  feature-flag-service:
+    build: .
+    container_name: feature-flag-service
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      PORT: 8080
+      GIN_MODE: release
+      DATABASE_URL: postgres://flaguser:flagpass@postgres:5432/feature_flags?sslmode=disable
+      MIGRATIONS_PATH: file://migrations
+      CACHE_REFRESH_INTERVAL: 30
+      SKIP_MIGRATIONS: "true"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  postgres_data:

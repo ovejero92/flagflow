@@ -1,0 +1,11 @@
+.env
+SETUP-PRIVADO.md
+NOTAS-*.md
+*-PRIVADO.md
+bin/
+*.exe
+*.test
+vendor/
+.idea/
+.vscode/
+*.log

@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="FlagFlow — Feature flag service auto-hospedado. 100% local, gratis, sin nube." />
+  <title>FlagFlow — Feature Flag Service auto-hospedado</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="hero">
+    <div class="container">
+      <span class="badge">100% local · Sin tarjeta · Sin nube</span>
+      <h1>FlagFlow – Feature Flag Service auto-hospedado</h1>
+      <p class="lead">
+        Activá y desactivá funcionalidades en tus apps sin redeploy. Cloná el repo,
+        ejecutá <code>docker-compose up -d</code> y tenés tu API en
+        <strong>localhost:8080</strong>.
+      </p>
+      <div class="hero-actions">
+        <a class="btn btn-primary" href="https://github.com/ovejero92/flagflow" target="_blank" rel="noopener">
+          Ver en GitHub
+        </a>
+        <a class="btn btn-secondary" href="#instalar">Cómo instalar</a>
+      </div>
+    </div>
+  </header>
+
+  <section id="que-es">
+    <div class="container">
+      <h2>¿Qué son los feature flags?</h2>
+      <p>
+        Son interruptores que controlan si una funcionalidad está visible para tus usuarios.
+        Sirven para despliegues seguros, rollouts graduales (10% → 50% → 100%), pruebas A/B
+        y apagar una feature en producción al instante sin volver a desplegar.
+      </p>
+      <div class="grid-3">
+        <article class="card">
+          <h3>Sin dependencia de la nube</h3>
+          <p>No usás LaunchDarkly ni servicios de pago. Todo corre en tu máquina con Docker.</p>
+        </article>
+        <article class="card">
+          <h3>API en Go</h3>
+          <p>Concurrencia real: cache con mutex, goroutines y cientos de consultas simultáneas.</p>
+        </article>
+        <article class="card">
+          <h3>SDK para React</h3>
+          <p>Integrá flags en el frontend apuntando a <code>http://localhost:8080</code>.</p>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <section id="instalar">
+    <div class="container">
+      <h2>Instalación en 3 pasos</h2>
+      <p><span class="tag">Requisito</span> Solo necesitás <strong>Docker</strong> y <strong>Docker Compose</strong>.</p>
+      <ol class="steps">
+        <li>
+          <div>
+            <strong>Clonar el repositorio</strong><br />
+            <code>git clone https://github.com/ovejero92/flagflow.git</code><br />
+            <code>cd flagflow</code>
+          </div>
+        </li>
+        <li>
+          <div>
+            <strong>Levantar el stack</strong><br />
+            <code>docker-compose up -d</code><br />
+            <small style="color: var(--muted)">Postgres + API Go. Migraciones automáticas al iniciar.</small>
+          </div>
+        </li>
+        <li>
+          <div>
+            <strong>Usar la API</strong><br />
+            Abrí <a href="http://localhost:8080/api/v1/health">http://localhost:8080/api/v1/health</a>
+            y creá apps/flags con curl o el SDK.
+          </div>
+        </li>
+      </ol>
+      <p style="margin-top: 1.5rem; color: var(--muted);">
+        Atajo: <code>./start.sh</code> (Mac/Linux) o <code>start.bat</code> (Windows) levanta Docker y abre el navegador.
+      </p>
+    </div>
+  </section>
+
+  <section id="ejemplo">
+    <div class="container">
+      <h2>Probar con curl</h2>
+      <p>Creá una aplicación, un flag y consultalo en el endpoint público:</p>
+      <pre><code># Health
+curl http://localhost:8080/api/v1/health
+
+# Crear app (guardá el "id" de la respuesta)
+curl -X POST http://localhost:8080/api/v1/apps \
+  -H "Content-Type: application/json" \
+  -d '{"name":"mi-app","description":"demo"}'
+
+# Crear flag (reemplazá APP_ID)
+curl -X POST http://localhost:8080/api/v1/apps/APP_ID/flags \
+  -H "Content-Type: application/json" \
+  -d '{"name":"dark-mode","enabled":true,"rollout_percentage":50}'
+
+# Consultar flag (público, con cache)
+curl http://localhost:8080/api/v1/public/flag/APP_ID/dark-mode \
+  -H "X-User-Id: user-123"</code></pre>
+    </div>
+  </section>
+
+  <section id="react">
+    <div class="container">
+      <h2>Integración con React</h2>
+      <p>Copiá <code>pkg/sdk/js/feature-flags-sdk.ts</code> a tu proyecto:</p>
+      <pre><code>import { FeatureFlagClient } from "./feature-flags-sdk";
+
+// Por defecto usa http://localhost:8080
+const client = new FeatureFlagClient("TU-APP-UUID");
+
+const darkMode = await client.isEnabled("dark-mode", "user-123");</code></pre>
+      <div class="features">
+        <div class="feature-item">Cache local 5s en el SDK</div>
+        <div class="feature-item">Rollout % consistente por usuario</div>
+        <div class="feature-item">CORS habilitado para frontends locales</div>
+      </div>
+    </div>
+  </section>
+
+  <section id="detener">
+    <div class="container">
+      <h2>Detener el servicio</h2>
+      <pre><code>docker-compose down</code></pre>
+      <p style="color: var(--muted); margin-top: 0.5rem;">
+        Para borrar también los datos de Postgres: <code>docker-compose down -v</code>
+      </p>
+    </div>
+  </section>
+
+  <footer>
+    <div class="container">
+      <p>
+        <a href="https://github.com/ovejero92/flagflow" target="_blank" rel="noopener">github.com/ovejero92/flagflow</a>
+        · Licencia MIT · FlagFlow 2026
+      </p>
+    </div>
+  </footer>
+</body>
+</html>

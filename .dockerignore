@@ -1,0 +1,10 @@
+.git
+.env
+SETUP-PRIVADO.md
+bin/
+*.exe
+landing/
+.vscode/
+.idea/
+*.md
+!README.md
