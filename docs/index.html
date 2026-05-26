@@ -107,6 +107,54 @@ curl http://localhost:8080/api/v1/public/flag/APP_ID/dark-mode \
     </div>
   </section>
 
+  <section id="ejemplo">
+    <div class="container">
+      <h2>Probar con Thunder Client</h2>
+      <p>sino te llega a funcionar con curl. En Thunder Client, hacés:</p>
+      <p>1. Registrar tu aplicación "Portfolio"</p>
+      <pre><code>
+Metodo ->  POST
+URL  ->  http://localhost:8080/api/v1/apps
+# Crear app (guardá el "id" de la respuesta)
+Headers -> Content-Type: application/json   # fila y valor
+BODY   ->  { "name": "Mi Portfolio", "description": "App principal para controlar features"}
+
+</code></pre>
+<p>Este codigo te devuelve algo asi: </p>
+      <pre><code>
+{
+  "id": "2s0fc1de-9413-4e3a-8ac4-d0fb6a3ef0wd",
+  "name": "Mi Portfolio",
+  "description": "App principal para controlar features",
+  "created_at": "2021-03-26T01:39:34.81222-03:00",
+  "updated_at": "2021-05-26T01:39:34.81222-03:00"
+}
+</code></pre>
+<p>2. Crear el flag "mostrar-banner-experimental" </p>
+      <pre><code>
+Metodo ->  POST
+URL  ->  http://localhost:8080/api/v1/apps/TU_APP_ID/flags   # en este ejemplo seria  id -> 2s0fc1de-9413-4e3a-8ac4-d0fb6a3ef0wd
+Headers -> Content-Type: application/json   # fila y valor
+BODY   ->  {"name":"mostrar-banner-experimental","enabled":true,"rollout_percentage":0}
+
+# rollout_percentage: Lo dejamos en 0 a propósito, así el flag empieza apagado para todos. Más tarde, cuando todo esté probado, podés cambiarlo a 100 con otro curl para activarlo globalmente.
+</code></pre>
+<p>Esto deveria arrojar un objeto asi:</p>
+      <pre><code>
+{
+  "id": "67d64d88-1321-44c3-8f9f-506751089e56",
+  "app_id": "260c1d7e-94c3-4eca-8ac4-d05b6a39f03d",
+  "name": "mostrar-banner-experimental",
+  "description": "",
+  "enabled": true,
+  "rollout_percentage": 0,
+  "created_at": "2026-05-26T02:43:10.787214-03:00",
+  "updated_at": "2026-05-26T02:43:10.787214-03:00"
+}
+</code></pre>
+    </div>
+  </section>
+
   <section id="react">
     <div class="container">
       <h2>Integración con React</h2>
@@ -117,6 +165,239 @@ curl http://localhost:8080/api/v1/public/flag/APP_ID/dark-mode \
 const client = new FeatureFlagClient("TU-APP-UUID");
 
 const darkMode = await client.isEnabled("dark-mode", "user-123");</code></pre>
+      <div class="features">
+        <div class="feature-item">Cache local 5s en el SDK</div>
+        <div class="feature-item">Rollout % consistente por usuario</div>
+        <div class="feature-item">CORS habilitado para frontends locales</div>
+      </div>
+    </div>
+  </section>
+
+   <section id="react">
+    <div class="container">
+      <h2>Ejemplo de uso en proyecto real</h2>
+      <p>proyecto de porfolio armado con next.js donde quiero agregar un cambio solo si el servicio me lo permite </p>
+      <p>Para eso cree 3 archivos: </p>
+      <pre><code>
+        /**
+          *src/libs/feature-flags.ts : el cliente. Le pega a GET /api/v1/public/flag/:appId/:flagName, manda X-User-Id, 
+          tiene timeout de 1.5s y nunca tira excepciones (devuelve defaultValue ante cualquier error).
+          * Cliente liviano para el servicio de feature flags FlagFlow.
+          * Solo consume el endpoint público GET /api/v1/public/flag/:appId/:flagName
+          * que devuelve { enabled: boolean } y, opcionalmente, acepta un header X-User-Id
+          * para que el server haga la evaluación de rollout consistente por usuario.
+        */
+
+        const DEFAULT_BASE_URL = 'http://localhost:8080';
+        const DEFAULT_TIMEOUT_MS = 1500;
+
+        export interface IsEnabledOptions {
+          /** Identificador del usuario para evaluar rollout consistente. Por defecto 'anonymous'. */
+          userId?: string;
+          /** Valor a devolver si el server no responde o falla. Por defecto false. */
+          defaultValue?: boolean;
+          /** AbortSignal externo (por ejemplo, el de un useEffect que se desmonta). */
+          signal?: AbortSignal;
+          }
+
+        export interface FeatureFlagClient {
+            isEnabled(flagName: string, options?: IsEnabledOptions): Promise<boolean>;
+        }
+
+        class FlagFlowClient implements FeatureFlagClient {
+          constructor(
+            private readonly baseUrl: string,
+            private readonly appId: string,
+            private readonly timeoutMs: number = DEFAULT_TIMEOUT_MS,
+          ) {}
+
+          async isEnabled(flagName: string, options: IsEnabledOptions = {}): Promise<boolean> {
+          const { userId, defaultValue = false, signal } = options;
+
+          // Si no hay app_id configurada no hay forma de consultar nada: caemos al default
+          // sin pegarle al server (evita 400s y logs en consola durante desarrollo).
+          if (!this.appId) {
+            return defaultValue;
+          }
+
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), this.timeoutMs);
+          const onExternalAbort = () => controller.abort();
+          signal?.addEventListener('abort', onExternalAbort);
+
+          try {
+            const url = `${this.baseUrl}/api/v1/public/flag/${this.appId}/${encodeURIComponent(flagName)}`;
+            const headers: Record<string, string> = {};
+          if (userId) {headers['X-User-Id'] = userId;}
+
+      const response = await fetch(url, {
+        method: 'GET',
+        headers,
+        signal: controller.signal,
+        // Las feature flags cambian server-side; nunca queremos respuestas cacheadas
+        cache: 'no-store',
+      });
+
+      if (!response.ok) {
+        return defaultValue;
+      }
+
+      const data = (await response.json()) as { enabled?: boolean };
+      return data.enabled === true;
+    } catch {
+      // Cualquier error (red caída, timeout, server apagado, JSON inválido) → default.
+      // La premisa es: si las flags fallan, la app no debe romperse.
+      return defaultValue;
+    } finally {
+      clearTimeout(timeoutId);
+      signal?.removeEventListener('abort', onExternalAbort);
+    }
+  }
+}
+
+let cachedClient: FeatureFlagClient | null = null;
+
+/**
+ * Devuelve una instancia singleton del cliente, configurada con variables de entorno:
+ *   - NEXT_PUBLIC_FLAGFLOW_API_URL (default: http://localhost:8080)
+ *   - NEXT_PUBLIC_FLAGFLOW_APP_ID  (obligatoria; si falta, isEnabled() devuelve defaultValue)
+ */
+export function getFeatureFlagClient(): FeatureFlagClient {
+  if (cachedClient) {
+    return cachedClient;
+  }
+
+  const baseUrl = (process.env.NEXT_PUBLIC_FLAGFLOW_API_URL ?? DEFAULT_BASE_URL).replace(/\/$/, '');
+  const appId = process.env.NEXT_PUBLIC_FLAGFLOW_APP_ID ?? '';
+
+  cachedClient = new FlagFlowClient(baseUrl, appId);
+  return cachedClient;
+}
+
+// Por defecto usa http://localhost:8080
+const client = new FeatureFlagClient("TU-APP-UUID");
+
+const darkMode = await client.isEnabled("dark-mode", "user-123");</code></pre>
+<pre><code>
+          #src/hooks/useFeatureFlag.ts:  un hook que envuelve el cliente con useEffect. Se cancela solo si el componente se desmonta.
+          'use client';
+
+import { useEffect, useState } from 'react';
+import { getFeatureFlagClient } from '@/libs/feature-flags';
+
+export interface UseFeatureFlagResult {
+  enabled: boolean;
+  loading: boolean;
+}
+
+/**
+ * Hook para consultar una feature flag desde un Client Component.
+ * Hace una sola request al montar y cancela si el componente se desmonta antes.
+ */
+export function useFeatureFlag(
+  flagName: string,
+  userId: string = 'anonymous',
+  defaultValue: boolean = false,
+): UseFeatureFlagResult {
+  const [enabled, setEnabled] = useState<boolean>(defaultValue);
+  const [loading, setLoading] = useState<boolean>(true);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    let active = true;
+
+    getFeatureFlagClient()
+      .isEnabled(flagName, { userId, defaultValue, signal: controller.signal })
+      .then((value) => {
+        if (active) {
+          setEnabled(value);
+        }
+      })
+      .finally(() => {
+        if (active) {
+          setLoading(false);
+        }
+      });
+
+    return () => {
+      active = false;
+      controller.abort();
+    };
+  }, [flagName, userId, defaultValue]);
+
+  return { enabled, loading };
+}
+</code></pre>
+
+<p>Despues el cambio que quieras hacerle a tu programa muetstro un ejemplo:</p>
+<pre><code>
+          #src/components/ui/ExperimentalBanner.tsx: el componente del banner. Si la flag está apagada, retorna null y no se renderiza nada.
+'use client';
+
+import { useFeatureFlag } from '@/hooks/useFeatureFlag';
+
+/**
+ * Banner flotante controlado por la flag `mostrar-banner-experimental` de FlagFlow.
+ * Se muestra únicamente si el server devuelve { enabled: true } para el visitante.
+ */
+export default function ExperimentalBanner() {
+  const { enabled } = useFeatureFlag('mostrar-banner-experimental', 'visitante');
+
+  if (!enabled) {
+    return null;
+  }
+
+  return (
+    <div
+      role="status"
+      aria-live="polite"
+      style= "text-align: center;"
+    >
+      ✨ Nueva sección de proyectos interactivos próximamente
+    </div>
+  );
+}
+</code></pre>
+<p>En una parte del proyecto renderizo esto nuevo:</p>
+<pre><code>
+          #src/components/sections/Hero.tsx:ahora renderiza <ExperimentalBanner /> al lado de la <section> (es un banner fixed, así que no afecta el layout del hero).
+'use client';
+import ExperimentalBanner from '../ui/ExperimentalBanner';
+
+ <strong> TODO EL CODIGO</strong>
+ < ExperimentalBanner />
+
+ # .env.local → con tu app_id (260c1d7e-94c3-4eca-8ac4-d05b6a39f03d) y la URL del server (http://localhost:8080). Está gitignoreado por .env* en el .gitignore.
+</code></pre>
+
+<h2>verlo funcional</h2>
+<p>Importante: tu flag tiene rollout_percentage: 0. Con esa configuración el endpoint público te va a devolver enabled: false siempre, aunque la flag esté "encendida". Hay que subir el rollout. Te paso los comandos para PowerShell.</p>
+<p>Verificar que el endpoint público responde (tiene que devolver algún JSON, aunque sea {"enabled":false}):</p>
+<pre><code>
+curl http://localhost:8080/api/v1/public/flag/< app_id >/mostrar-banner-experimental
+</code></pre>
+<p>Subir el rollout a 100% para verla activa:</p>
+<pre><code>
+Invoke-RestMethod -Uri "http://localhost:8080/api/v1/flags/67d64d88-1321-44c3-8f9f-506751089e56" `
+  -Method PUT `
+  -ContentType "application/json" `
+  -Body '{"rollout_percentage": 100}'
+
+  # Te tiene que devolver la info de la api y enabled : true
+</code></pre>
+<p> Reiniciar npm run dev</p>
+<p> Para probar el killswitch (la magia de feature flags), apagá la flag sin tocar el código</p>
+<pre><code>
+Invoke-RestMethod -Uri "http://localhost:8080/api/v1/flags/67d64d88-1321-44c3-8f9f-506751089e56" `
+  -Method PUT `
+  -ContentType "application/json" `
+  -Body '{"enabled": false}'
+
+  /*
+  Recargás el portfolio y el banner desaparece. 
+  Eso es lo que la gente valora de feature flags: cambiar comportamiento en producción sin redeploy.
+  */
+</code></pre>
       <div class="features">
         <div class="feature-item">Cache local 5s en el SDK</div>
         <div class="feature-item">Rollout % consistente por usuario</div>
